@@ -3,9 +3,9 @@ import time
 import numpy as np
 import torch
 from torch.autograd.variable import Variable
-from models import PNet,RNet,ONet
-import utils as utils
-import image_tools
+from dface.core.models import PNet,RNet,ONet
+import dface.core.utils as utils
+import dface.core.image_tools as image_tools
 
 
 def create_mtcnn_net(p_model_path=None, r_model_path=None, o_model_path=None, use_cuda=True):
@@ -13,26 +13,33 @@ def create_mtcnn_net(p_model_path=None, r_model_path=None, o_model_path=None, us
     pnet, rnet, onet = None, None, None
 
     if p_model_path is not None:
-        pnet = PNet(use_cuda=use_cuda)
-        pnet.load_state_dict(torch.load(p_model_path))
+        pnet = PNet(use_cuda=use_cuda)       
         if(use_cuda):
+            pnet.load_state_dict(torch.load(p_model_path))
             pnet.cuda()
+        else:
+            # forcing all GPU tensors to be in CPU while loading
+            pnet.load_state_dict(torch.load(p_model_path, map_location=lambda storage, loc: storage))
         pnet.eval()
 
     if r_model_path is not None:
         rnet = RNet(use_cuda=use_cuda)
-        rnet.load_state_dict(torch.load(r_model_path))
         if (use_cuda):
+            rnet.load_state_dict(torch.load(r_model_path))
             rnet.cuda()
+        else:
+            rnet.load_state_dict(torch.load(r_model_path, map_location=lambda storage, loc: storage))
         rnet.eval()
 
     if o_model_path is not None:
         onet = ONet(use_cuda=use_cuda)
-        onet.load_state_dict(torch.load(o_model_path))
         if (use_cuda):
+            onet.load_state_dict(torch.load(o_model_path))
             onet.cuda()
+        else:
+            onet.load_state_dict(torch.load(o_model_path, map_location=lambda storage, loc: storage))
         onet.eval()
-
+        
     return pnet,rnet,onet
 
 
@@ -623,7 +630,7 @@ face candidates:%d, current batch_size:%d"%(num_boxes, batch_size)
 
             t3 = time.time() - t
             t = time.time()
-            print "time cost " + '{:.3f}'.format(t1+t2+t3) + '  pnet {:.3f}  rnet {:.3f}  onet {:.3f}'.format(t1, t2, t3)
+            print("time cost " + '{:.3f}'.format(t1+t2+t3) + '  pnet {:.3f}  rnet {:.3f}  onet {:.3f}'.format(t1, t2, t3))
 
         return boxes_align, landmark_align
 

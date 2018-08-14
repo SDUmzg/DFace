@@ -3,12 +3,10 @@ import numpy as np
 import cv2
 import os
 import numpy.random as npr
-from core.utils import IoU
-import config
+from dface.core.utils import IoU
+import dface.config as config
 
-
-
-def gen_pnet_data(data_dir,anno_file):
+def gen_pnet_data(data_dir,anno_file,prefix):
 
     neg_save_dir =  os.path.join(data_dir,"12/negative")
     pos_save_dir =  os.path.join(data_dir,"12/positive")
@@ -34,7 +32,7 @@ def gen_pnet_data(data_dir,anno_file):
         annotations = f.readlines()
 
     num = len(annotations)
-    print "%d pics in total" % num
+    print("%d pics in total" % num)
     p_idx = 0
     n_idx = 0
     d_idx = 0
@@ -42,13 +40,13 @@ def gen_pnet_data(data_dir,anno_file):
     box_idx = 0
     for annotation in annotations:
         annotation = annotation.strip().split(' ')
-        im_path = annotation[0]
-        bbox = map(float, annotation[1:])
+        im_path = os.path.join(prefix,annotation[0])
+        bbox = list(map(float, annotation[1:]))
         boxes = np.array(bbox, dtype=np.int32).reshape(-1, 4)
         img = cv2.imread(im_path)
         idx += 1
         if idx % 100 == 0:
-            print idx, "images done"
+            print(idx, "images done")
 
         height, width, channel = img.shape
 
@@ -147,7 +145,7 @@ def gen_pnet_data(data_dir,anno_file):
                     cv2.imwrite(save_file, resized_im)
                     d_idx += 1
             box_idx += 1
-            print "%s images done, pos: %s part: %s neg: %s"%(idx, p_idx, d_idx, n_idx)
+            print("%s images done, pos: %s part: %s neg: %s"%(idx, p_idx, d_idx, n_idx))
 
     f1.close()
     f2.close()
@@ -159,16 +157,19 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test mtcnn',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--dataset_path', dest='dataset_path', help='dataset folder',
+    parser.add_argument('--dface_traindata_store', dest='traindata_store', help='dface train data temporary folder,include 12,24,48/postive,negative,part,landmark',
                         default='../data/wider/', type=str)
-    parser.add_argument('--anno_file', dest='annotation_file', help='dataset original annotation file',
-                        default='../data/wider/anno.txt', type=str)
-    parser.add_argument('--prefix_path', dest='prefix_path', help='image prefix root path',
+    parser.add_argument('--anno_file', dest='annotation_file', help='wider face original annotation file',
+                        default=os.path.join(config.ANNO_STORE_DIR,"wider_origin_anno.txt"), type=str)
+    parser.add_argument('--prefix_path', dest='prefix_path', help='annotation file image prefix root path',
                         default='', type=str)
+
+
+
 
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
     args = parse_args()
-    gen_pnet_data(args.dataset_path,args.annotation_file)
+    gen_pnet_data(args.traindata_store,args.annotation_file,args.prefix_path)

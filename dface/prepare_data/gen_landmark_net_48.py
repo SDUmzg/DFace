@@ -1,6 +1,5 @@
 import argparse
 
-
 import cv2
 import numpy as np
 from core.detect import MtcnnDetector,create_mtcnn_net
@@ -9,15 +8,15 @@ from core.image_reader import TestImageLoader
 import time
 import os
 import cPickle
-from core.utils import convert_to_square,IoU
-import config
-import core.vision as vision
+from dface.core.utils import convert_to_square,IoU
+import dface.config as config
+import dface.core.vision as vision
 
-def gen_rnet_data(data_dir, anno_file, pnet_model_file, prefix_path='', use_cuda=True, vis=False):
+def gen_landmark48_data(data_dir, anno_file, pnet_model_file, rnet_model_file, prefix_path='', use_cuda=True, vis=False):
 
 
-    pnet, _, _ = create_mtcnn_net(p_model_path=pnet_model_file, use_cuda=use_cuda)
-    mtcnn_detector = MtcnnDetector(pnet=pnet,min_face_size=12)
+    pnet, rnet, _ = create_mtcnn_net(p_model_path=pnet_model_file, r_model_path=rnet_model_file, use_cuda=use_cuda)
+    mtcnn_detector = MtcnnDetector(pnet=pnet, rnet=rnet, min_face_size=12)
 
     imagedb = ImageDB(anno_file,mode="test",prefix_path=prefix_path)
     imdb = imagedb.load_imdb()
@@ -28,12 +27,22 @@ def gen_rnet_data(data_dir, anno_file, pnet_model_file, prefix_path='', use_cuda
 
     for databatch in image_reader:
         if batch_idx % 100 == 0:
-            print "%d images done" % batch_idx
+            print("%d images done" % batch_idx)
         im = databatch
+
+
+        if im.shape[0] >= 1200 or im.shape[1] >=1200:
+            all_boxes.append(np.array([]))
+            batch_idx += 1
+            continue
+
 
         t = time.time()
 
-        boxes, boxes_align = mtcnn_detector.detect_pnet(im=im)
+        p_boxes, p_boxes_align = mtcnn_detector.detect_pnet(im=im)
+
+        boxes, boxes_align = mtcnn_detector.detect_rnet(im=im, dets=p_boxes_align)
+
         if boxes_align is None:
             all_boxes.append(np.array([]))
             batch_idx += 1
@@ -47,7 +56,6 @@ def gen_rnet_data(data_dir, anno_file, pnet_model_file, prefix_path='', use_cuda
         all_boxes.append(boxes_align)
         batch_idx += 1
 
-    # save_path = model_store_path()
     save_path = config.MODEL_STORE_DIR
 
     if not os.path.exists(save_path):
@@ -58,19 +66,16 @@ def gen_rnet_data(data_dir, anno_file, pnet_model_file, prefix_path='', use_cuda
         cPickle.dump(all_boxes, f, cPickle.HIGHEST_PROTOCOL)
 
 
-    gen_rnet_sample_data(data_dir,anno_file,save_file)
+    gen_sample_data(data_dir,anno_file,save_file, prefix_path)
 
 
 
-def gen_rnet_sample_data(data_dir,anno_file,det_boxs_file):
+def gen_sample_data(data_dir, anno_file, det_boxs_file, prefix_path =''):
 
-    neg_save_dir = os.path.join(data_dir, "24/negative")
-    pos_save_dir = os.path.join(data_dir, "24/positive")
-    part_save_dir = os.path.join(data_dir, "24/part")
+    landmark_save_dir = os.path.join(data_dir, "48/landmark")
 
-    for dir_path in [neg_save_dir, pos_save_dir, part_save_dir]:
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+    if not os.path.exists(landmark_save_dir):
+        os.makedirs(landmark_save_dir)
 
 
     # load ground truth from annotation file
@@ -79,51 +84,53 @@ def gen_rnet_sample_data(data_dir,anno_file,det_boxs_file):
     with open(anno_file, 'r') as f:
         annotations = f.readlines()
 
-    image_size = 24
-    net = "rnet"
+    image_size = 48
+    net = "onet"
 
     im_idx_list = list()
     gt_boxes_list = list()
+    gt_landmark_list = list()
     num_of_images = len(annotations)
-    print "processing %d images in total" % num_of_images
+    print("processing %d images in total" % num_of_images)
 
     for annotation in annotations:
         annotation = annotation.strip().split(' ')
         im_idx = annotation[0]
 
-        boxes = map(float, annotation[1:])
+        boxes = map(float, annotation[1:5])
         boxes = np.array(boxes, dtype=np.float32).reshape(-1, 4)
+        landmarks = map(float, annotation[5:])
+        landmarks = np.array(landmarks, dtype=np.float32).reshape(-1, 10)
+
         im_idx_list.append(im_idx)
         gt_boxes_list.append(boxes)
+        gt_landmark_list.append(landmarks)
 
 
     save_path = config.ANNO_STORE_DIR
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
-    f1 = open(os.path.join(save_path, 'pos_%d.txt' % image_size), 'w')
-    f2 = open(os.path.join(save_path, 'neg_%d.txt' % image_size), 'w')
-    f3 = open(os.path.join(save_path, 'part_%d.txt' % image_size), 'w')
+    f = open(os.path.join(save_path, 'landmark_48.txt'), 'w')
+
 
     det_handle = open(det_boxs_file, 'r')
 
     det_boxes = cPickle.load(det_handle)
-    print len(det_boxes), num_of_images
+    print(len(det_boxes), num_of_images)
     assert len(det_boxes) == num_of_images, "incorrect detections or ground truths"
 
     # index of neg, pos and part face, used as their image names
-    n_idx = 0
     p_idx = 0
-    d_idx = 0
     image_done = 0
-    for im_idx, dets, gts in zip(im_idx_list, det_boxes, gt_boxes_list):
+    for im_idx, dets, gts, landmark in zip(im_idx_list, det_boxes, gt_boxes_list, gt_landmark_list):
         if image_done % 100 == 0:
-            print "%d images done" % image_done
+            print("%d images done" % image_done)
         image_done += 1
 
         if dets.shape[0] == 0:
             continue
-        img = cv2.imread(im_idx)
+        img = cv2.imread(os.path.join(prefix_path,im_idx))
         dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
 
@@ -145,10 +152,7 @@ def gen_rnet_sample_data(data_dir,anno_file,det_boxs_file):
             # save negative images and write label
             if np.max(Iou) < 0.3:
                 # Iou with all gts must below 0.3
-                save_file = os.path.join(neg_save_dir, "%s.jpg" % n_idx)
-                f2.write(save_file + ' 0\n')
-                cv2.imwrite(save_file, resized_im)
-                n_idx += 1
+               continue
             else:
                 # find gt_box with the highest iou
                 idx = np.argmax(Iou)
@@ -161,27 +165,37 @@ def gen_rnet_sample_data(data_dir,anno_file,det_boxs_file):
                 offset_x2 = (x2 - x_right) / float(width)
                 offset_y2 = (y2 - y_bottom) / float(height)
 
+                offset_left_eye_x = (landmark[0,0] - x_left) / float(width)
+                offset_left_eye_y = (landmark[0,1] - y_top) / float(height)
+
+                offset_right_eye_x = (landmark[0,2] - x_left) / float(width)
+                offset_right_eye_y = (landmark[0,3] - y_top) / float(height)
+
+                offset_nose_x = (landmark[0,4] - x_left) / float(width)
+                offset_nose_y = (landmark[0,5] - y_top) / float(height)
+
+                offset_left_mouth_x = (landmark[0,6] - x_left) / float(width)
+                offset_left_mouth_y = (landmark[0,7] - y_top) / float(height)
+
+                offset_right_mouth_x = (landmark[0,8] - x_left) / float(width)
+                offset_right_mouth_y = (landmark[0,9] - y_top) / float(height)
+
+
+
                 # save positive and part-face images and write labels
                 if np.max(Iou) >= 0.65:
-                    save_file = os.path.join(pos_save_dir, "%s.jpg" % p_idx)
-                    f1.write(save_file + ' 1 %.2f %.2f %.2f %.2f\n' % (
-                    offset_x1, offset_y1, offset_x2, offset_y2))
+                    save_file = os.path.join(landmark_save_dir, "%s.jpg" % p_idx)
+
+                    f.write(save_file + ' -2 %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f \n' % \
+                            (offset_x1, offset_y1, offset_x2, offset_y2, \
+                             offset_left_eye_x, offset_left_eye_y, offset_right_eye_x, offset_right_eye_y,
+                             offset_nose_x, offset_nose_y, offset_left_mouth_x, offset_left_mouth_y,
+                             offset_right_mouth_x, offset_right_mouth_y))
+
                     cv2.imwrite(save_file, resized_im)
                     p_idx += 1
 
-                elif np.max(Iou) >= 0.4:
-                    save_file = os.path.join(part_save_dir, "%s.jpg" % d_idx)
-                    f3.write(save_file + ' -1 %.2f %.2f %.2f %.2f\n' % (
-                    offset_x1, offset_y1, offset_x2, offset_y2))
-                    cv2.imwrite(save_file, resized_im)
-                    d_idx += 1
-    f1.close()
-    f2.close()
-    f3.close()
-
-
-
-
+    f.close()
 
 
 
@@ -196,15 +210,16 @@ def parse_args():
 
     parser.add_argument('--dataset_path', dest='dataset_path', help='dataset folder',
                         default='../data/wider/', type=str)
-    parser.add_argument('--anno_file', dest='annotation_file', help='dataset original annotation file',
+    parser.add_argument('--anno_file', dest='annotation_file', help='output data folder',
                         default='../data/wider/anno.txt', type=str)
     parser.add_argument('--pmodel_file', dest='pnet_model_file', help='PNet model file path',
                         default='/idata/workspace/mtcnn/model_store/pnet_epoch_5best.pt', type=str)
+    parser.add_argument('--rmodel_file', dest='rnet_model_file', help='RNet model file path',
+                        default='/idata/workspace/mtcnn/model_store/rnet_epoch_1.pt', type=str)
     parser.add_argument('--gpu', dest='use_cuda', help='with gpu',
                         default=config.USE_CUDA, type=bool)
     parser.add_argument('--prefix_path', dest='prefix_path', help='image prefix root path',
                         default='', type=str)
-
 
     args = parser.parse_args()
     return args
@@ -213,7 +228,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    gen_rnet_data(args.dataset_path, args.annotation_file, args.pnet_model_file, args.prefix_path, args.use_cuda)
+    gen_landmark48_data(args.dataset_path, args.annotation_file, args.pnet_model_file, args.rnet_model_file, args.prefix_path, args.use_cuda)
 
 
 

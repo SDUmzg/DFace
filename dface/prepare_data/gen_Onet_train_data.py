@@ -2,15 +2,15 @@ import argparse
 
 import cv2
 import numpy as np
-from core.detect import MtcnnDetector,create_mtcnn_net
-from core.imagedb import ImageDB
-from core.image_reader import TestImageLoader
+from dface.core.detect import MtcnnDetector,create_mtcnn_net
+from dface.core.imagedb import ImageDB
+from dface.core.image_reader import TestImageLoader
 import time
 import os
 import cPickle
-from core.utils import convert_to_square,IoU
-import config
-import core.vision as vision
+from dface.core.utils import convert_to_square,IoU
+import dface.config as config
+import dface.core.vision as vision
 
 def gen_onet_data(data_dir, anno_file, pnet_model_file, rnet_model_file, prefix_path='', use_cuda=True, vis=False):
 
@@ -27,7 +27,7 @@ def gen_onet_data(data_dir, anno_file, pnet_model_file, rnet_model_file, prefix_
 
     for databatch in image_reader:
         if batch_idx % 100 == 0:
-            print "%d images done" % batch_idx
+            print("%d images done" % batch_idx)
         im = databatch
 
         t = time.time()
@@ -59,14 +59,14 @@ def gen_onet_data(data_dir, anno_file, pnet_model_file, rnet_model_file, prefix_
         cPickle.dump(all_boxes, f, cPickle.HIGHEST_PROTOCOL)
 
 
-    gen_onet_sample_data(data_dir,anno_file,save_file)
+    gen_onet_sample_data(data_dir,anno_file,save_file,prefix_path)
 
 
 
 
 
 
-def gen_onet_sample_data(data_dir,anno_file,det_boxs_file):
+def gen_onet_sample_data(data_dir,anno_file,det_boxs_file,prefix):
 
     neg_save_dir = os.path.join(data_dir, "48/negative")
     pos_save_dir = os.path.join(data_dir, "48/positive")
@@ -89,11 +89,11 @@ def gen_onet_sample_data(data_dir,anno_file,det_boxs_file):
     im_idx_list = list()
     gt_boxes_list = list()
     num_of_images = len(annotations)
-    print "processing %d images in total" % num_of_images
+    print("processing %d images in total" % num_of_images)
 
     for annotation in annotations:
         annotation = annotation.strip().split(' ')
-        im_idx = annotation[0]
+        im_idx = os.path.join(prefix,annotation[0])
 
         boxes = map(float, annotation[1:])
         boxes = np.array(boxes, dtype=np.float32).reshape(-1, 4)
@@ -112,7 +112,7 @@ def gen_onet_sample_data(data_dir,anno_file,det_boxs_file):
     det_handle = open(det_boxs_file, 'r')
 
     det_boxes = cPickle.load(det_handle)
-    print len(det_boxes), num_of_images
+    print(len(det_boxes), num_of_images)
     assert len(det_boxes) == num_of_images, "incorrect detections or ground truths"
 
     # index of neg, pos and part face, used as their image names
@@ -122,7 +122,7 @@ def gen_onet_sample_data(data_dir,anno_file,det_boxs_file):
     image_done = 0
     for im_idx, dets, gts in zip(im_idx_list, det_boxes, gt_boxes_list):
         if image_done % 100 == 0:
-            print "%d images done" % image_done
+            print("%d images done" % image_done)
         image_done += 1
 
         if dets.shape[0] == 0:
@@ -194,17 +194,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test mtcnn',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--dataset_path', dest='dataset_path', help='dataset folder',
+    parser.add_argument('--dface_traindata_store', dest='traindata_store', help='dface train data temporary folder,include 12,24,48/postive,negative,part,landmark',
                         default='../data/wider/', type=str)
-    parser.add_argument('--anno_file', dest='annotation_file', help='output data folder',
-                        default='../data/wider/anno.txt', type=str)
+    parser.add_argument('--anno_file', dest='annotation_file', help='wider face original annotation file',
+                        default=os.path.join(config.ANNO_STORE_DIR,"wider_origin_anno.txt"), type=str)
     parser.add_argument('--pmodel_file', dest='pnet_model_file', help='PNet model file path',
-                        default='/idata/workspace/mtcnn/model_store/pnet_epoch_5best.pt', type=str)
+                        default='/idata/workspace/dface/model_store/pnet_epoch.pt', type=str)
     parser.add_argument('--rmodel_file', dest='rnet_model_file', help='RNet model file path',
-                        default='/idata/workspace/mtcnn/model_store/rnet_epoch_1.pt', type=str)
+                        default='/idata/workspace/dface/model_store/rnet_epoch.pt', type=str)
     parser.add_argument('--gpu', dest='use_cuda', help='with gpu',
                         default=config.USE_CUDA, type=bool)
-    parser.add_argument('--prefix_path', dest='prefix_path', help='image prefix root path',
+    parser.add_argument('--prefix_path', dest='prefix_path', help='annotation file image prefix root path',
                         default='', type=str)
 
     args = parser.parse_args()
@@ -214,7 +214,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    gen_onet_data(args.dataset_path, args.annotation_file, args.pnet_model_file, args.rnet_model_file, args.prefix_path, args.use_cuda)
+    gen_onet_data(args.traindata_store, args.annotation_file, args.pnet_model_file, args.rnet_model_file, args.prefix_path, args.use_cuda)
 
 
 
